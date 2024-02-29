@@ -1,8 +1,8 @@
-
+migration/
 __pycache__/
 *.py[cod]
 *$py.class
-
+.gitignore
 *.so
 
 # Distribution / packaging
