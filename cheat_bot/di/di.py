@@ -1,3 +1,3 @@
 from .container import Container
 
-depends = Container()
+di_container = Container()

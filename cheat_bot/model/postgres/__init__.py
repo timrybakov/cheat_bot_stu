@@ -1,0 +1,1 @@
+from cheat_bot.model.postgres.postgres_communication import PostgresCommunication

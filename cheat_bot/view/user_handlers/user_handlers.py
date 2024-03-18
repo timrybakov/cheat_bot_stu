@@ -1,13 +1,11 @@
-from aiogram import types, Router, F, Bot
+from aiogram import types, F, Bot, Router
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from asyncpg import UniqueViolationError
 
-from cheat_bot.model.fsm.storage import UserCallbackData
-from cheat_bot.presenter.user_presenter.user_presenter import UserPresenter
-from cheat_bot.view.keyboards.keyboards import get_on_start_keyboard, get_academic_year_keyboard
-from cheat_bot.view.keyboards.callbacks import GetOrPostCallback
-from cheat_bot.view.keyboards.enums import Action
+from cheat_bot.view import keyboards, templates
+from cheat_bot.presenter import error_handlers
+from cheat_bot.presenter.user_presenter import UserPresenter
+from ...presenter.error_handlers import custom_errors
 
 user_router = Router()
 
@@ -24,18 +22,21 @@ async def on_start(
     :return:
     """
     presenter = UserPresenter(state)
-    presenter.on_start_check_permission(message.chat.id)
     await presenter.get_fsm_storage.clear()
-    await presenter.get_fsm_storage.set_state(UserCallbackData.start)
+    await presenter.get_fsm_storage.set_state(
+        keyboards.UserCallbackData.start_conversation_state
+    )
     await message.answer(
-        text='Welcome to STU Cheat Bot',
-        reply_markup=get_on_start_keyboard()
+        text=f'{templates.text_data["user_handlers"]["on_start"]}',
+        reply_markup=keyboards.get_on_start_keyboard()
     )
 
 
 @user_router.callback_query(
-    StateFilter(UserCallbackData.start),
-    GetOrPostCallback.filter(F.method == Action.post)
+    StateFilter(keyboards.UserCallbackData.start_conversation_state),
+    keyboards.GetOrPostCallback.filter(
+        F.method == keyboards.Action.post_interaction_method
+    )
 )
 async def post_choosing_academic_year(
         query: types.CallbackQuery,
@@ -45,28 +46,32 @@ async def post_choosing_academic_year(
 
     Обрабатывает callback-запрос (post),
     устанавливает пользователя в состояние
-    (academic_year) выбора года обучения.
+    (choosing_academic_year_state) выбора года обучения.
 
     :param query:
     :param state:
     :return:
     """
     presenter = UserPresenter(state)
-    await presenter.get_fsm_storage.update_data(
+    await presenter.get_fsm_storage.update(
         method=query.data.split(':')[1],
         username=query.from_user.username
     )
     await query.message.edit_text(
-        text='Для отправки материала выберите год обучения:',
+        text=f'{templates.text_data["user_handlers"]["post_choosing_academic_year"]}',
         inline_message_id=str(query.from_user.id),
-        reply_markup=get_academic_year_keyboard()
+        reply_markup=keyboards.get_academic_year_keyboard()
     )
-    await presenter.get_fsm_storage.set_state(UserCallbackData.academic_year)
+    await presenter.get_fsm_storage.set_state(
+        keyboards.UserCallbackData.choosing_academic_year_state
+    )
 
 
 @user_router.callback_query(
-    StateFilter(UserCallbackData.start),
-    GetOrPostCallback.filter(F.method == Action.get)
+    StateFilter(keyboards.UserCallbackData.start_conversation_state),
+    keyboards.GetOrPostCallback.filter(
+        F.method == keyboards.Action.get_interaction_method
+    )
 )
 async def get_choosing_academic_year(
         query: types.CallbackQuery,
@@ -76,29 +81,29 @@ async def get_choosing_academic_year(
 
     Обрабатывает callback-запрос (get),
     устанавливает пользователя в состояние
-    (academic_year) выбора года обучения.
+    (choosing_academic_year_state) выбора года обучения.
 
     :param query:
     :param state:
     :return:
     """
     presenter = UserPresenter(state)
-    await presenter.get_fsm_storage.update_data(
+    await presenter.get_fsm_storage.update(
         method=query.data.split(':')[1],
         username=query.from_user.username
     )
     await query.message.edit_text(
-        text='Для получения материала выберите год обучения:',
+        text=f'{templates.text_data["user_handlers"]["get_choosing_academic_year"]}',
         inline_message_id=str(query.from_user.id),
-        reply_markup=get_academic_year_keyboard()
+        reply_markup=keyboards.get_academic_year_keyboard()
     )
     await presenter.get_fsm_storage.set_state(
-        UserCallbackData.academic_year
+        keyboards.UserCallbackData.choosing_academic_year_state
     )
 
 
 @user_router.callback_query(
-    StateFilter(UserCallbackData.academic_year)
+    StateFilter(keyboards.UserCallbackData.choosing_academic_year_state)
 )
 async def major_command_line(
         query: types.CallbackQuery,
@@ -115,19 +120,28 @@ async def major_command_line(
     :return:
     """
     presenter = UserPresenter(state)
-    fsm_storage = await presenter.get_fsm_storage.get_data()
+    fsm_storage = await presenter.get_fsm_storage.get()
     await query.message.edit_text(
-        text=(
-            'Для продолжения работы введите данный о вашем'
-            'обучении по шаблону: b-<направление_обучения>/b-<предмет>'
-        ),
+        text=f'{templates.text_data["user_handlers"]["file_path_template"]}',
         inline_message_id=str(query.from_user.id)
     )
-    await presenter.set_method(query, fsm_storage)
+    if fsm_storage.get('method') == 'post_interaction_method':
+        await presenter.set_user_interaction_method(query, fsm_storage)
+        await presenter.get_fsm_storage.set_state(
+            keyboards.UserCallbackData.posting_data_state
+        )
+    else:
+        await presenter.set_user_interaction_method(query, fsm_storage)
+        await presenter.get_fsm_storage.set_state(
+            keyboards.UserCallbackData.getting_data_state
+        )
 
 
-@user_router.message(StateFilter(UserCallbackData.get))
-async def get_to_aws_storage(message: types.Message, bot: Bot, state: FSMContext):
+@user_router.message(StateFilter(keyboards.UserCallbackData.getting_data_state))
+async def get_to_aws_storage(
+        message: types.Message,
+        bot: Bot, state: FSMContext
+) -> None:
     """Хэндлер получение сообщения от пользователя по шаблону.
 
     Обрабатывает запрос пользователя на получение
@@ -139,26 +153,31 @@ async def get_to_aws_storage(message: types.Message, bot: Bot, state: FSMContext
     :param state:
     :return:
     """
-    presenter = UserPresenter(state)
-    list_of_images, fsm_storage = await presenter.get_all_images(message)
-    for image_url in list_of_images:
-        await bot.send_photo(
-            chat_id=fsm_storage.get('user_telegram_id'),
-            photo=image_url,
-            protect_content=True
-        )
-    else:
+    try:
+        presenter = UserPresenter(state)
+        list_of_images, fsm_storage = await presenter.get_all_images(message)
+        for image_url in list_of_images:
+            await bot.send_photo(
+                chat_id=fsm_storage.get('telegram_id'),
+                photo=image_url,
+                protect_content=True
+            )
+        else:
+            await message.answer(
+                text=f'{templates.text_data["user_handlers"]["thanks"]}'
+            )
+            await presenter.get_fsm_storage.clear()
+    except error_handlers.ClientS3exception:
         await message.answer(
-            text='Спасибо что используете бота.'
+            text=f'{templates.text_data["user_handlers"]["server_error"]}'
         )
-        await presenter.get_fsm_storage.clear()
 
 
-@user_router.message(StateFilter(UserCallbackData.post), F.text)
+@user_router.message(StateFilter(keyboards.UserCallbackData.posting_data_state), F.text)
 async def post_to_aws_storage(
         message: types.Message,
         bot: Bot, state: FSMContext
-):
+) -> None:
     """Хэндлер получение сообщения от пользователя по шаблону.
 
     Обрабатывает запрос пользователя на добавление
@@ -171,19 +190,19 @@ async def post_to_aws_storage(
     :return:
     """
     presenter = UserPresenter(state)
-    await presenter.get_fsm_storage.update_data(file_path=message.text.lower())
-    fsm_storage = await presenter.get_fsm_storage.get_data()
+    await presenter.get_fsm_storage.update(file_path=message.text.lower())
+    fsm_storage = await presenter.get_fsm_storage.get()
     await bot.send_message(
-        chat_id=fsm_storage.get('user_telegram_id'),
-        text='Отправьте пожалуйста материал.'
+        chat_id=fsm_storage.get('telegram_id'),
+        text=f'{templates.text_data["user_handlers"]["post_to_aws_storage"]}'
     )
 
 
-@user_router.message(StateFilter(UserCallbackData.post), F.photo)
-async def post_to_aws_storage(
+@user_router.message(StateFilter(keyboards.UserCallbackData.posting_data_state), F.photo)
+async def post_to_aws_storage_photo(
         message: types.Message,
         bot: Bot, state: FSMContext
-):
+) -> None:
     """Хэндлер получение материала от пользователя.
 
     Обрабатывает материал, отправленный пользователем, и
@@ -196,37 +215,35 @@ async def post_to_aws_storage(
     """
     presenter = UserPresenter(state)
     try:
-        await presenter.get_fsm_storage.update_data(
+        await presenter.get_fsm_storage.update(
             image_id=message.photo[-1].file_id,
-            file_unique_id=message.photo[-1].file_unique_id
+            file_id=message.photo[-1].file_unique_id
         )
-        fsm_storage = await presenter.get_fsm_storage.get_data()
-        await presenter.post_image(**fsm_storage)
+        fsm_storage = await presenter.get_fsm_storage.get()
+        await presenter.post_image(fsm_storage)
         await bot.send_message(
-            chat_id=fsm_storage.get('user_telegram_id'),
-            text=('Фотографии отправлены на проверку модераторам. ' 
-                  'По окончании проверки мы Вас оповестим.'
-                  )
+            chat_id=fsm_storage.get('telegram_id'),
+            text=f'{templates.text_data["user_handlers"]["sending_to_moderators"]}'
         )
-    except UniqueViolationError:
+    except custom_errors.NotUniqueException:
         await message.answer(
-            text='Вы уже отправляли данный материал.'
+            text=f'{templates.text_data["user_handlers"]["sending_again"]}'
         )
-    except ValueError:
+    except custom_errors.AfterValidationException:
         await message.answer(
-            text='Проверьте правильность заполнения шаблона.'
+            text=f'{templates.text_data["user_handlers"]["incorrect_path"]}'
         )
 
 
-@user_router.message(StateFilter(UserCallbackData.post))
+@user_router.message(StateFilter(keyboards.UserCallbackData.posting_data_state))
 async def post_wrong_material(
     message: types.Message
-):
+) -> None:
     """Хэндлер обработки посторонненого материал от пользователя.
 
     :param message:
     :return:
     """
     await message.answer(
-        text='Бот пока поддерживает только фотографии со сжатием. Отправьте фото повторно.'
+        text=f'{templates.text_data["user_handlers"]["post_wrong_material"]}'
     )

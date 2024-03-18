@@ -1,23 +1,17 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):
-    AUTH_TOKEN: str
-    ADMIN_GROUP_ID: int
-    TUNNEL_URL: str
-
-    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
-
-
 class DBSettings(BaseSettings):
-    DB_HOST: str
-    DB_PORT: str
-    DB_USER: str
-    DB_PASS: str
-    DB_NAME: str
-
-    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
+    db_host: str
+    db_port: str
+    db_user: str
+    db_pass: str
+    db_name: str
 
 
-settings = Settings()
-db_settings = DBSettings()
+class Settings(BaseSettings):
+    auth_token: str
+    admin_group_id: int
+    tunnel_url: str
+    admins_id: str
+    db_settings: DBSettings = DBSettings()

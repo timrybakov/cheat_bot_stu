@@ -3,72 +3,60 @@ from typing import Any, Dict
 from aiogram import types
 from aiogram.fsm.context import FSMContext
 
-
-from cheat_bot.clients.utils import AccessHelper
-from cheat_bot.config.config import settings
-from cheat_bot.di.di import depends
-from cheat_bot.model.fsm.storage import UserCallbackData
-from cheat_bot.model.validators.validators import InsertValidator
-from cheat_bot.presenter.fsm_presenter.fsm_presenter import FSMPresenter
+from cheat_bot.model import sсhemes, s3_storage,postgres
+from ..conversion import Conversion
+from ..error_handlers import custom_errors
+from ..fsm_presenter import fsm_presenter
 
 
 class UserPresenter:
-    def __init__(self, state: FSMContext = None):
-        self.__state = state
+    def __init__(self, state: FSMContext = None) -> None:
+        self._state = state
+        self._s3_conn = s3_storage.S3Storage()
+        self._postgres_conn = postgres.PostgresCommunication()
 
     @property
-    def get_fsm_storage(self) -> FSMPresenter:
-        return FSMPresenter(self.__state)
+    def get_fsm_storage(self) -> fsm_presenter.FSMPresenter:
+        return fsm_presenter.FSMPresenter(self._state)
 
-    def on_start_check_permission(self, id_: int):
-        if settings.ADMIN_GROUP_ID == id_:
-            return
+    def send_to_s3_storage(self, image_id: str, academy_year: str, file_path: str) -> None:
+        image = Conversion.get_images_binary(image_id)
+        image_bin = Conversion.convert_bin_to_jpg(image)
+        self._s3_conn.post(image_bin, academy_year, file_path)
 
-    def send_to_s3_storage(self, image_id: str, bucket_name: str, file_path: str) -> None:
-        image = AccessHelper.get_images_binary(image_id)
-        image_bin = AccessHelper.convert_bin_to_jpg(image)
-        depends.repository_container.s3_interface.add(image_bin, bucket_name, file_path)
-
-    async def post_image(self, **kwargs: dict) -> None:
+    async def post_image(self, kwargs: dict) -> None:
         try:
-            validated_data = InsertValidator(**kwargs)
-            await depends.repository_container.user_interface.create(
-                **validated_data.model_dump()
-            )
+            validated_data = sсhemes.UserScheme(**kwargs)
+            await self._postgres_conn.create(validated_data)
+        except custom_errors.NotUniqueException:
+            raise custom_errors.NotUniqueException()
         except ValueError:
-            raise ValueError
+            raise custom_errors.AfterValidationException()
 
-    async def select_and_delete_from_database(self):
-        result = await depends.repository_container.user_interface.get_first()
-        await depends.repository_container.user_interface.delete(id_=result.id)
-        return result
+    async def get_first_obj(self) -> sсhemes.UserScheme:
+        try:
+            result = await self._postgres_conn.select()
+            await self._postgres_conn.delete(obj=result)
+            return result
+        except custom_errors.NoMaterialException:
+            raise custom_errors.NoMaterialException()
 
-    async def set_method(
+    async def set_user_interaction_method(
             self,
             query: types.CallbackQuery,
             fsm_storage: dict
-    ) -> None:
-        if fsm_storage.get('method') == 'post':
-            await self.get_fsm_storage.set_data({})
-            await self.get_fsm_storage.update_data(
-                bucket=query.data.split(':')[1],
-                user_telegram_id=query.from_user.id,
-                username=fsm_storage.get('username')
-            )
-            await self.get_fsm_storage.set_state(UserCallbackData.post)
-        else:
-            await self.get_fsm_storage.set_data({})
-            await self.get_fsm_storage.update_data(
-                bucket=query.data.split(':')[1],
-                user_telegram_id=query.from_user.id,
-                username=fsm_storage.get('username')
-            )
-            await self.get_fsm_storage.set_state(UserCallbackData.get)
+    ):
+        await self.get_fsm_storage.set({})
+        await self.get_fsm_storage.update(
+            academy_year=query.data.split(':')[1],
+            telegram_id=query.from_user.id,
+            username=fsm_storage.get('username')
+        )
 
     async def get_all_images(self, message: types.Message) -> tuple[list, Dict[str, Any]]:
-        fsm_storage = await self.get_fsm_storage.get_data()
-        bucket_name = fsm_storage.get('bucket')
-        list_of_images = depends.repository_container.s3_interface.get(
-            bucket_name=bucket_name, route=message.text.lower()
+        fsm_storage = await self.get_fsm_storage.get()
+        academy_year = fsm_storage.get('academy_year')
+        list_of_images = self._s3_conn.get(
+            academy_year=academy_year, route=message.text.lower()
         )
         return list_of_images, fsm_storage

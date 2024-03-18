@@ -9,9 +9,15 @@ class PostgresConnector:
         )
 
     async def execute(self, query: str, values: dict) -> Record | None:
-        async with self.__db as db:
-            return await db.execute(query=query, values=values)
+        try:
+            async with self.__db as db:
+                return await db.execute(query=query, values=values)
+        except AttributeError:
+            raise AttributeError
 
     async def fetch_one(self, query: str, values: dict) -> Record | None:
-        async with self.__db as db:
-            return await db.fetch_one(query=query, values=values)
+        try:
+            async with self.__db as db:
+                return await db.fetch_one(query=query, values=values)
+        except AttributeError:
+            raise AttributeError

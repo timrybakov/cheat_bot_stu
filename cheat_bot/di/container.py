@@ -1,16 +1,14 @@
 from functools import cached_property
 
-
-from cheat_bot.di.repository_container import RepositoryContainer
-from cheat_bot.config.config import DBSettings
-from cheat_bot.utils.singleton_meta import SingletonMeta
+from cheat_bot import config
+from .repository_container import RepositoryContainer
 
 
-class Container(metaclass=SingletonMeta):
+class Container:
     @cached_property
-    def settings(self):
-        return DBSettings()
+    def settings(self) -> config.Settings:
+        return config.Settings()
 
     @cached_property
-    def repository_container(self):
+    def repository_container(self) -> RepositoryContainer:
         return RepositoryContainer(self.settings)

@@ -1,68 +1,24 @@
 import logging
 
-from aiogram import types, Router, Bot
-from aiogram.filters import Command, StateFilter
+from aiogram import types, Bot, Router
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram import F
-from botocore import exceptions
 
-from cheat_bot.model.fsm.storage import AdminCallbackData
-from cheat_bot.presenter.user_presenter.user_presenter import UserPresenter
-from cheat_bot.view.keyboards.callbacks import AdminAccessCallback
-from cheat_bot.view.keyboards.keyboards import get_admin_keyboard
-from cheat_bot.view.keyboards.enums import AdminAccess
+from cheat_bot.view import keyboards, templates
+from cheat_bot.presenter.user_presenter import UserPresenter
+from cheat_bot.presenter import error_handlers
+from .constants import ADMIN_LIST
+from ...presenter.error_handlers.custom_errors import NoMaterialException
 
 admin_router = Router()
 
-ADMIN = [689970990]
 
-
-@admin_router.message(StateFilter(None), Command('admin'))
-async def control_rights(message: types.Message, state: FSMContext):
-    """Хэндлер команды - '/admin'.
-
-    Проверяет наличие прав доступа для модерации сообщений.
-
-    :param message:
-    :param state:
-    :return:
-    """
-    presenter = UserPresenter(state)
-    if message.from_user.id in ADMIN:
-        await presenter.get_fsm_storage.set_state(AdminCallbackData.admin)
-        await message.answer(
-            text='Вы являетесь администратором, добро пожаловать в панель администратора.'
-        )
-    else:
-        await message.answer(text='Вы обычный пользователь, у вас нет доступа к панели администратора.')
-
-
-@admin_router.message(Command('cancel_admin'))
-async def cancel_admin_no_state(message: types.Message, state: FSMContext):
-    """Хэндлер команды - '/cancel_admin'.
-
-    Сбрасывает данные состояния.
-
-    :param message:
-    :param state:
-    :return:
-    """
-    presenter = UserPresenter(state)
-    if message.from_user.id in ADMIN:
-        await presenter.get_fsm_storage.clear()
-        await message.answer(
-            text='Для повторного доступа к модерированию введите команду - /admin'
-        )
-
-
-@admin_router.message(
-    StateFilter(AdminCallbackData.admin),
-    Command('moderate'), F.text
-)
+@admin_router.message(Command('moderate'))
 async def moderate_image(
         message: types.Message,
         bot: Bot, state: FSMContext
-):
+) -> None:
     """Хэндлер команды - '/moderate'.
 
     Обрабатывает команду и отправляет фото
@@ -79,29 +35,35 @@ async def moderate_image(
         message_id=message.message_id
     )
     try:
-        user_data = await presenter.select_and_delete_from_database()
-        await presenter.get_fsm_storage.update_data(**user_data)
-        await bot.send_photo(
-            chat_id=message.chat.id,
-            photo=user_data.image_id,
-            reply_markup=get_admin_keyboard()
-        )
-    except AttributeError as error:
+        if message.from_user.id in ADMIN_LIST:
+            user_data = await presenter.get_first_obj()
+            await presenter.get_fsm_storage.update(**dict(user_data))
+            await bot.send_photo(
+                chat_id=message.chat.id,
+                photo=user_data.image_id,
+                reply_markup=keyboards.get_admin_keyboard()
+            )
+        else:
+            await message.answer(
+                text=f'{templates.text_data["admin_handlers"]["fake_admin"]}'
+            )
+    except NoMaterialException as error:
         logging.error(error)
         await message.answer(
-            text='Материала для модерации пока нет.'
+            text=f'{templates.text_data["admin_handlers"]["moderation"]}'
         )
 
 
 @admin_router.callback_query(
-    StateFilter(AdminCallbackData.admin),
-    AdminAccessCallback.filter(F.admin_access == AdminAccess.accept)
+    keyboards.AdminAccessCallback.filter(
+        F.admin_access == keyboards.AdminAccess.accept
+    )
 )
 async def accept_image(
         query: types.CallbackQuery,
         bot: Bot, state: FSMContext
 
-):
+) -> None:
     """Хэндлер добавление материала.
 
     Обрабатывает callback-запрос (accept),
@@ -113,38 +75,38 @@ async def accept_image(
     :return:
     """
     presenter = UserPresenter(state)
-    fsm_storage = await presenter.get_fsm_storage.get_data()
+    fsm_storage = await presenter.get_fsm_storage.get()
     try:
         presenter.send_to_s3_storage(
             fsm_storage.get('image_id'),
-            fsm_storage.get('bucket'),
+            fsm_storage.get('academy_year'),
             fsm_storage.get('file_path')
         )
         await query.answer(
-            text='Материал добавлен.'
+            text=f'{templates.text_data["admin_handlers"]["accept_image_admin_view"]}'
         )
         await query.message.delete()
         await bot.send_message(
-            chat_id=fsm_storage.get('user_telegram_id'),
-            text='Фото проверено и добавлено в архив, спасибо что пользуетесь ботом.'
+            chat_id=fsm_storage.get('telegram_id'),
+            text=f'{templates.text_data["admin_handlers"]["accept_image_user_view"]}'
         )
-        await presenter.get_fsm_storage.set_data({})
-    except exceptions.ClientError as error:
-        logging.error(error)
+        await presenter.get_fsm_storage.set({})
+    except error_handlers.ClientS3exception:
         await bot.send_message(
-            chat_id=fsm_storage.get('user_id'),
-            text='Проверьте правильность введенных данных по шаблону: ' + fsm_storage.get("file_path")
+            chat_id=fsm_storage.get('telegram_id'),
+            text=f'{templates.text_data["admin_handlers"]["incorrect_data"]} {fsm_storage.get("file_path")}'
         )
 
 
 @admin_router.callback_query(
-    StateFilter(AdminCallbackData.admin),
-    AdminAccessCallback.filter(F.admin_access == AdminAccess.reject)
+    keyboards.AdminAccessCallback.filter(
+        F.admin_access == keyboards.AdminAccess.reject
+    )
 )
 async def reject_image(
         query: types.CallbackQuery,
         bot: Bot, state: FSMContext
-):
+) -> None:
     """Хэндлер отклонение материала.
 
     Обрабатывает callback-запрос (reject),
@@ -156,13 +118,13 @@ async def reject_image(
     :return:
     """
     presenter = UserPresenter(state)
-    fsm_storage = await presenter.get_fsm_storage.get_data()
+    fsm_storage = await presenter.get_fsm_storage.get()
     await query.answer(
-        text='Материал отклонен.'
+        text=f'{templates.text_data["admin_handlers"]["reject_image_admin_view"]}'
     )
     await query.message.delete()
     await bot.send_message(
-        chat_id=fsm_storage.get('user_id'),
-        text='Извините, но ваше фото не прошло модерацию.'
+        chat_id=fsm_storage.get('telegram_id'),
+        text=f'{templates.text_data["admin_handlers"]["reject_image_user_view"]}'
     )
-    await presenter.get_fsm_storage.set_data({})
+    await presenter.get_fsm_storage.set({})
