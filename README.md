@@ -14,13 +14,11 @@ The bot is available for any user, the admin panel allows moderating the content
     ```
 
   - Create and activate virtual environment:
-    * <sub>linux/macos:</sub>
     ```
     poetry install && poetry shell
     ```
     
  - Add environment variables:
-    * <sub>linux/macos:</sub>
     ```
     export AUTH_TOKEN=<bot_token>
     export TUNNEL_URL=<ngrok_tunnel_url>
@@ -33,7 +31,6 @@ The bot is available for any user, the admin panel allows moderating the content
     ```
 
   - Start project:
-    * <sub>linux/macos:</sub>
     ```
     uvicorn main:app --reload
     ```
