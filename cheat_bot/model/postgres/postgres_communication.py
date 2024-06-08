@@ -1,5 +1,3 @@
-from asyncpg import UniqueViolationError
-
 from cheat_bot.di import di_container
 from cheat_bot.presenter import error_handlers
 from ..sсhemes.schemes import UserScheme

@@ -16,8 +16,8 @@ class Conversion:
         return requests.get(cls.url + img_path).content
 
     @classmethod
-    def convert_bin_to_jpg(cls, file_binary: bytes) -> bytes:
-        im = Image.open(BytesIO(file_binary))
+    def convert_bin_to_jpg(cls, file_id: str) -> bytes:
+        im = Image.open(BytesIO(Conversion.get_images_binary(file_id)))
         rgb_im = im.convert('RGB')
         img_byte_array = BytesIO()
         rgb_im.save(img_byte_array, format='JPEG')
