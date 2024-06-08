@@ -1,41 +1,39 @@
-## STU_CHEAT_BOT
 
-### О проекте:
-Проект позволяет пользователь загружать и добавлять материал (фотографии) в облачное
-хранилище Amazon AWS S3. В боте присутствует админ-зона, которая позволяет модерировать
-материал от пользователей.
+### STU_CHEAT_BOT
+## About project:
+The project was created to make it easy to add documentation to AWS S3 cloud storage. 
+The project includes a user interface and an interface for the administrator.
+The bot is available for any user, the admin panel allows moderating the content received from the user.
 
-### Развертывание проекта на локальном сервере:
+## How to start project:
 
-* Выполнить последовательно в командной строке:
-  - Клонировать репозиторий:
+* Execute sequentially at the command line:
+  - Clone the repository:
     ```
-    git clone git@github.com:timrybakov/cheat_bot_stu.git
+    git@github.com:timrybakov/cheat_bot_stu.git && cd cheat_bot_stu
     ```
 
-  - Установить зависимости (poetry):
+  - Create and activate virtual environment:
+    * <sub>linux/macos:</sub>
     ```
-    poetry install
+    poetry install && poetry shell
     ```
-  - Добавить переменные окружения:
-    * Данные для подключения к серверу PostgreSQL:
-      ```
-      export DB_HOST=<хост>
-      export DB_PORT=<порт>
-      export DB_USER=<пользователь>
-      export DB_PASS=<пароль>
-      export DB_NAME=<название_бд>
-      ```
-    * Данные для подключения к боту и настройки прав доступов для пользователей:
-      ```
-      export AUTH_TOKEN=<токен_бота>
-      export TUNNEL_URL=<туннель>
-      export ADMINS_ID=<список_id_пользователей_через_запятую>
-      ```
-      Настройка туннеля предполагает, что в отдельном терминале будет работать ngrok,
-      на созданный туннельный url-адрес будут приходить запросы со стороны сервера телеграм.
+    
+ - Add environment variables:
+    * <sub>linux/macos:</sub>
+    ```
+    export AUTH_TOKEN=<bot_token>
+    export TUNNEL_URL=<ngrok_tunnel_url>
+    export ADMINS_ID=<admin_telegram_id>,<another_admin_telegram_id>
+    export DB_HOST=<database_host>
+    export DB_PORT=<database_port>
+    export DB_USER=<database_user>
+    export DB_PASS=<database_password>
+    export DB_NAME=<database_name>
+    ```
 
-  - Запуск проекта:
-      ```
-      uvicorn main:app --reload
-      ```
+  - Start project:
+    * <sub>linux/macos:</sub>
+    ```
+    uvicorn main:app --reload
+    ```
