@@ -3,7 +3,7 @@ from typing import Any, Dict
 from aiogram import types
 from aiogram.fsm.context import FSMContext
 
-from cheat_bot.model import sсhemes, s3_storage,postgres
+from cheat_bot.model import sсhemes, s3_storage, postgres
 from ..conversion import Conversion
 from ..error_handlers import custom_errors
 from ..fsm_presenter import fsm_presenter
@@ -20,8 +20,7 @@ class UserPresenter:
         return fsm_presenter.FSMPresenter(self._state)
 
     def send_to_s3_storage(self, image_id: str, academy_year: str, file_path: str) -> None:
-        image = Conversion.get_images_binary(image_id)
-        image_bin = Conversion.convert_bin_to_jpg(image)
+        image_bin = Conversion.convert_bin_to_jpg(image_id)
         self._s3_conn.post(image_bin, academy_year, file_path)
 
     async def post_image(self, kwargs: dict) -> None:
